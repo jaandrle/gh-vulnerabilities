@@ -1,35 +1,66 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Hello gh-vulnerabilities!"
+if [[ "$*" =~ "--web" ]]; then
+    exo-open --launch WebBrowser "`gh repo view --json url -q '.url'`/security/dependabot" 2> /dev/null
+    exit "$?"
+fi
+if [[ "$*" =~ "--help" ]]; then
+    echo -e "
+    Prints vulnerabilities list for current reository.
 
-# Snippets to help get started:
+    USAGE
+        gh vulnerabilities [all|active|dismissed] [FLAGS]
+        - active		[default] pritns out active (not dismissed)
+        - all			prints all
+        - dismissed		prints only dismissed
 
-# Determine if an executable is in the PATH
-# if ! type -p ruby >/dev/null; then
-#   echo "Ruby not found on the system" >&2
-#   exit 1
-# fi
+    FLAGS
+        --web	open Dependabot web page for current repository
+        --help	prints this text
+"
+    return 0
+fi
+list=`gh api graphql -F owner=":owner" -F repo=":repo" -f query='
+query($owner: String!, $repo: String!, $endCursor: String) {
+    repository(owner: $owner, name: $repo) {
+    vulnerabilityAlerts(first: 100, after: $endCursor) {
+        nodes {
+        createdAt
+        dismissReason
+        dismissedAt
+        securityAdvisory { summary, permalink }
+        securityVulnerability { package { name }, severity, firstPatchedVersion { identifier }, }
+        vulnerableManifestPath
+        }
+    }
+    }
+}
+' -q '[
+    .data.repository.vulnerabilityAlerts.nodes.[] |
+    .securityAdvisory + {
+        "remediation": .securityVulnerability | { (.package.name): ">=\(.firstPatchedVersion.identifier)" },
+        "severity": ( .securityVulnerability.severity | if . == "HIGH" then 0 elif . == "MODERATE" then 1 else 2 end ),
+        dismissedAt,
+        "path": .vulnerableManifestPath
+    }
+]'`
 
-# Pass arguments through to another command
-# gh issue list "$@" -R cli/cli
+[[ "$list" = "" ]] && echo "[]" && exit 0
 
-# Using the gh api command to retrieve and format information
-# QUERY='
-#   query($endCursor: String) {
-#     viewer {
-#       repositories(first: 100, after: $endCursor) {
-#         nodes {
-#           nameWithOwner
-#           stargazerCount
-#         }
-#       }
-#     }
-#   }
-# '
-# TEMPLATE='
-#   {{- range $repo := .data.viewer.repositories.nodes -}}
-#     {{- printf "name: %s - stargazers: %v\n" $repo.nameWithOwner $repo.stargazerCount -}}
-#   {{- end -}}
-# '
-# exec gh api graphql -f query="${QUERY}" --paginate --template="${TEMPLATE}"
+group_by='[. | group_by(.path) | .[] | {
+    "path": .[0].path,
+    "vulnerabilities": [
+        .[] | { summary, remediation, severity, permalink } + ( if has("dismissedAt") then { dismissedAt } else {} end ) ] | group_by(.remediation) | [ .[] | min_by(.severity)
+    ] | sort_by(.severity) | [ .[] | . + { "severity": ( .severity | if . == 0 then "HIGH" elif . == 1 then "MODERATE" else "LOW" end ) } ]
+}]'
+filter="${1:-active}"
+[[ "$filter" = "all" ]] \
+    && echo "$list" | jq "$group_by" \
+    && exit 0
+[[ "$filter" = "active" ]] \
+    && select='.dismissedAt == null' \
+    || select='.dismissedAt'
+
+echo "$list" | jq "[ .[] | select($select) | del(.dismissedAt) ] | $group_by"
+exit 0
