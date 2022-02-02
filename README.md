@@ -7,7 +7,7 @@ A [GitHub CLI](https://cli.github.com/) extension to work with projects.
 
 Output is **JSON** in the form `[ { path, vulnerabilities: [ { summary, remediation, severity, permalink }, … ] }, … ]`.
 
-**Tested only for `nodejs` repos!**
+**Tested only for `npm` (`nodejs`) repos!**
 
 ## Installation
 

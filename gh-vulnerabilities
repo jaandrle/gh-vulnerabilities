@@ -13,11 +13,12 @@ if [[ "$*" =~ "--help" ]]; then
         gh vulnerabilities [all|active|dismissed] [FLAGS]
         - active		[default] pritns out active (not dismissed)
         - all			prints all
-        - dismissed		prints only dismissed
+        - dismissed		[in fact not previous] prints only dismissed
 
     FLAGS
         --web	open Dependabot web page for current repository
         --help	prints this text
+        --npm	listed in the form to add into \`package.json\`
 "
     exit 0
 fi
@@ -54,13 +55,22 @@ group_by='[. | group_by(.path) | .[] | {
         .[] | { summary, remediation, severity, permalink } + ( if has("dismissedAt") then { dismissedAt } else {} end ) ] | group_by(.remediation) | [ .[] | min_by(.severity)
     ] | sort_by(.severity) | [ .[] | . + { "severity": ( .severity | if . == 0 then "HIGH" elif . == 1 then "MODERATE" else "LOW" end ) } ]
 }]'
+if [[ "$*" =~ "--npm" ]]; then
+    [[ "$1" == "--npm" ]] && shift
+    is_npm=1
+else
+    is_npm=0
+fi
 filter="${1:-active}"
-[[ "$filter" = "all" ]] \
-    && echo "$list" | jq "$group_by" \
-    && exit 0
+out(){
+    [[ $is_npm == 1 ]] \
+        && echo "$list" | jq -r "$1"' | [ .[].vulnerabilities[].remediation | to_entries | .[] | ("\""+.key+"\": \""+.value+"\"") ] | join(",\n")' \
+        || echo "$list" | jq "$1"
+    exit 0
+}
+[[ "$filter" = "all" ]] && out "$group_by"
 [[ "$filter" = "active" ]] \
     && select='.dismissedAt == null' \
     || select='.dismissedAt'
 
-echo "$list" | jq "[ .[] | select($select) | del(.dismissedAt) ] | $group_by"
-exit 0
+out "[ .[] | select($select) | del(.dismissedAt) ] | $group_by"
