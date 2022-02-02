@@ -19,7 +19,7 @@ if [[ "$*" =~ "--help" ]]; then
         --web	open Dependabot web page for current repository
         --help	prints this text
 "
-    return 0
+    exit 0
 fi
 list=`gh api graphql -F owner=":owner" -F repo=":repo" -f query='
 query($owner: String!, $repo: String!, $endCursor: String) {
