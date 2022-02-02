@@ -5,6 +5,10 @@ GitHub cli extension to see vulnerabilities in current reository.
 
 A [GitHub CLI](https://cli.github.com/) extension to work with projects.
 
+Output is **JSON** in the form `[ { path, vulnerabilities: [ { summary, remediation, severity, permalink }, … ] }, … ]`.
+
+**Tested only for `nodejs` repos!**
+
 ## Installation
 
 Make sure you have at least version 2 of the GitHub CLI installed. Internaly use [jq](https://stedolan.github.io/jq/).
